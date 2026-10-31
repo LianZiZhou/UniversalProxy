@@ -109,6 +109,7 @@ pub fn names() -> &'static [&'static str] {
         "github-models",
         "hf-router",
         "parallel",
+        "typesafeai",
         "moonshot",
         "zhipu",
         "dashscope",
@@ -188,6 +189,8 @@ pub fn provider(name: &str) -> Option<SiteConfig> {
         "github-models" => P::new("github-models", "models.github.ai", "/inference", "GitHub Models"),
         "hf-router" => P::new("hf-router", "router.huggingface.co", "/v1", "Hugging Face Inference Providers"),
         "parallel" => P::new("parallel", "api.parallel.ai", "/v1", "Parallel web search / tasks"),
+        // System One uses native state/questions payloads, not chat completions.
+        "typesafeai" => P::new("typesafeai", "api.typesafe.ai", "/v1", "TypeSafe AI (System One / Jev structured decisions)"),
         // ---- China ----
         "moonshot" => P::new("moonshot", "api.moonshot.cn", "/v1", "Moonshot Kimi (international: /moonshot-intl/)")
             .api("moonshot-intl", "api.moonshot.ai"),

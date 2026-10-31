@@ -26,6 +26,7 @@ const ANSWER: &str = r#"See https://api.openai.com/v1/models and github.com/open
 const UPSTREAMS: &[&str] = &[
     "api.openai.com",
     "api.anthropic.com",
+    "api.typesafe.ai",
     "generativelanguage.googleapis.com",
     "us-central1-aiplatform.googleapis.com",
     "aiplatform.googleapis.com",
@@ -67,6 +68,42 @@ async fn mock(req: Request) -> Response {
             .into_response();
     }
     match (host.as_str(), path.as_str()) {
+        ("api.typesafe.ai", "/v1/models") => {
+            assert_eq!(req.method(), "GET");
+            assert_eq!(auth.as_deref(), Some("Bearer typesafe-test"));
+            (
+                [(header::CONTENT_TYPE, "application/json")],
+                r#"{"models":[{"name":"jev-latest","description":"See https://api.typesafe.ai/v1/models","release_date":"2026-09-15"}]}"#,
+            ).into_response()
+        }
+        ("api.typesafe.ai", "/v1/systemone") => {
+            assert_eq!(req.method(), "POST");
+            assert_eq!(auth.as_deref(), Some("Bearer typesafe-test"));
+            if let Some(code) = query.strip_prefix("status=") {
+                return (
+                    StatusCode::from_u16(code.parse().unwrap()).unwrap(),
+                    [(header::CONTENT_TYPE, "application/json"), (header::RETRY_AFTER, "3")],
+                    r#"{"detail":"See https://api.typesafe.ai/v1/systemone"}"#,
+                ).into_response();
+            }
+            assert_eq!(req.headers()["typesafe-danger-zone-images"], "true");
+            assert_eq!(req.headers()["typesafe-danger-zone-long-context"], "true");
+            let content_type = req.headers()[header::CONTENT_TYPE].to_str().unwrap().to_owned();
+            let encoding = req.headers().get(header::CONTENT_ENCODING)
+                .map(|v| v.to_str().unwrap().to_owned());
+            let body = req.into_body().collect().await.unwrap().to_bytes();
+            (
+                [(header::CONTENT_TYPE, "application/json")],
+                serde_json::json!({
+                    "model": "jev-latest",
+                    "answers": {"billing": {"type": "noul", "noul": 0.98}},
+                    "usage": {"input_tokens": 120, "output_tokens": 12},
+                    "echo_body": body.to_vec(), "echo_query": query,
+                    "echo_content_type": content_type, "echo_encoding": encoding,
+                    "content": "https://api.typesafe.ai/v1/systemone",
+                }).to_string(),
+            ).into_response()
+        }
         ("api.openai.com", "/v1/chat/completions") => {
             assert_eq!(auth.as_deref(), Some("Bearer sk-test"));
             let body = String::from_utf8(req.into_body().collect().await.unwrap().to_bytes().to_vec()).unwrap();
@@ -187,6 +224,76 @@ fn client() -> reqwest::Client {
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .unwrap()
+}
+
+#[tokio::test]
+async fn typesafeai_native_payloads_are_untouched() {
+    use std::io::Write;
+
+    let addr = setup().await;
+    let json = serde_json::json!({
+        "model": "jev-latest",
+        "state": {"url": "https://ai.test/typesafeai/v1/models"},
+        "questions": {
+            "billing": {"type": "noul", "instructions": "Is this about billing?"},
+            "tone": {"type": "choice", "criteria": {"calm": "Calm", "angry": "Angry"}},
+            "urgency": {"type": "score", "criteria": ["Low", "High"]}
+        }
+    }).to_string().into_bytes();
+    let mut gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    gzip.write_all(&json).unwrap();
+    let multipart = format!(
+        "--test-boundary\r\nContent-Disposition: form-data; name=\"request\"\r\nContent-Type: application/json\r\n\r\n{}\r\n--test-boundary--\r\n",
+        String::from_utf8(json.clone()).unwrap()
+    ).into_bytes();
+    for (body, content_type, encoding) in [
+        (json, "application/json", None),
+        (gzip.finish().unwrap(), "application/json", Some("gzip")),
+        (multipart, "multipart/form-data; boundary=test-boundary", None),
+    ] {
+        let mut req = client()
+            .post(format!("http://{addr}/typesafeai/v1/systemone?note=https%3A%2F%2Fai.test%2Ftypesafeai"))
+            .header("host", GATEWAY)
+            .header("authorization", "Bearer typesafe-test")
+            .header("content-type", content_type)
+            .header("typesafe-danger-zone-images", "true")
+            .header("typesafe-danger-zone-long-context", "true")
+            .body(body.clone());
+        if let Some(encoding) = encoding {
+            req = req.header("content-encoding", encoding);
+        }
+        let r = req.send().await.unwrap();
+        assert_eq!(r.status(), 200);
+        let v: serde_json::Value = serde_json::from_str(&r.text().await.unwrap()).unwrap();
+        assert_eq!(v["echo_body"], serde_json::json!(body));
+        assert_eq!(v["echo_content_type"], content_type);
+        assert_eq!(v["echo_encoding"], serde_json::json!(encoding));
+        assert_eq!(v["echo_query"], "note=https%3A%2F%2Fai.test%2Ftypesafeai");
+        assert_eq!(v["content"], "https://api.typesafe.ai/v1/systemone");
+        assert_eq!(v["answers"]["billing"]["noul"], 0.98);
+        assert_eq!(v["usage"], serde_json::json!({"input_tokens": 120, "output_tokens": 12}));
+    }
+}
+
+#[tokio::test]
+async fn typesafeai_models_and_errors_pass_through() {
+    let addr = setup().await;
+    let r = client().get(format!("http://{addr}/typesafeai/v1/models"))
+        .header("host", GATEWAY)
+        .header("authorization", "Bearer typesafe-test")
+        .send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    assert_eq!(r.text().await.unwrap(), r#"{"models":[{"name":"jev-latest","description":"See https://api.typesafe.ai/v1/models","release_date":"2026-09-15"}]}"#);
+    for status in [400, 401, 413, 415, 422, 429, 529] {
+        let r = client().post(format!("http://{addr}/typesafeai/v1/systemone?status={status}"))
+            .header("host", GATEWAY)
+            .header("authorization", "Bearer typesafe-test")
+            .header("content-type", "application/json")
+            .body("{}").send().await.unwrap();
+        assert_eq!(r.status().as_u16(), status);
+        assert_eq!(r.headers()[header::RETRY_AFTER], "3");
+        assert_eq!(r.text().await.unwrap(), r#"{"detail":"See https://api.typesafe.ai/v1/systemone"}"#);
+    }
 }
 
 #[tokio::test]
@@ -409,6 +516,8 @@ async fn gateway_index() {
     assert!(providers.len() >= 40);
     let openai = providers.iter().find(|p| p["name"] == "openai").unwrap();
     assert_eq!(openai["base_url"], "https://ai.test/openai/v1");
+    let typesafeai = providers.iter().find(|p| p["name"] == "typesafeai").unwrap();
+    assert_eq!(typesafeai["base_url"], "https://ai.test/typesafeai/v1");
     let vertex = providers.iter().find(|p| p["name"] == "vertex").unwrap();
     assert!(
         vertex["prefixes"]

@@ -48,7 +48,7 @@ public_domain = "docker.example.com"
 preset = "ai"                   # AI API 网关：/openai /anthropic /gemini /vertex /openrouter ... 共 40+ 家
 mode = "single"
 public_domain = "ai.example.com"
-# providers = ["openai", "anthropic", "gemini", "vertex", "openrouter"]   # 只开放部分服务商
+# providers = ["openai", "anthropic", "gemini", "vertex", "openrouter", "typesafeai"]   # 只开放部分服务商
 
 # Vertex AI 的 gRPC SDK 不能带路径前缀，需要独立域名（wildcard：<地域>-aiplatform.vertex.example.com）：
 # [[sites]]

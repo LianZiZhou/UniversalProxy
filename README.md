@@ -141,6 +141,7 @@ docker pull ghcr.example.com/homebrew/core/hello:2.12.1
 | 语音 | `/elevenlabs` `/deepgram` `/assemblyai`（实时 `/assemblyai-rt`）`/cartesia` |
 | 图像 / 视频 | `/replicate` `/fal`（队列 `/fal-queue`）`/stability` `/ideogram` `/bfl` `/runway` `/luma` |
 | 向量 / 搜索 | `/voyage` `/jina`（`/jina-reader`、`/jina-search`） |
+| 结构化判断 | `/typesafeai` → api.typesafe.ai（TypeSafe AI / Jev，原生 System One API） |
 
 每个服务商也可以作为独立站点用在自己的域名上，例如 `preset = "openai"` + `public_domain = "openai.example.com"`。
 `providers = [...]` 可以只开放部分服务商。
@@ -182,6 +183,30 @@ export GOOGLE_GEMINI_BASE_URL=https://ai.example.com/gemini
 # Amazon Bedrock：只支持 Bedrock API Key（Bearer）
 export AWS_BEARER_TOKEN_BEDROCK=...   # base URL: https://ai.example.com/bedrock-mantle-us-east-1/openai/v1
 ```
+
+### TypeSafe AI / Jev
+
+AI 网关默认包含 `typesafeai`；如果配置了 `providers = [...]`，需将 `"typesafeai"` 加入列表。
+HTTP API base URL 为 `https://ai.example.com/typesafeai/v1`。也支持独立站点 `preset = "typesafeai"`。
+
+TypeSafe 使用原生 `state` / `questions` 请求结构，不使用 OpenAI 的 chat completions 协议。
+支持 `noul`、`choice`、`score` 等问题，模型名称可通过 models 接口查询：
+
+```bash
+curl https://ai.example.com/typesafeai/v1/models \
+  -H "Authorization: Bearer $TYPESAFE_API_KEY"
+
+curl https://ai.example.com/typesafeai/v1/systemone \
+  -H "Authorization: Bearer $TYPESAFE_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"jev-latest","state":"I was charged twice. Please refund the extra charge.","questions":{"billing":{"type":"noul","instructions":"Is this message about billing?"}}}'
+```
+
+请求、`answers`、`usage`、压缩或 multipart 请求体均原样透传；实验性图片 / `box` 和长上下文
+所需的 `TypeSafe-Danger-Zone-Images`、`TypeSafe-Danger-Zone-Long-Context` 请求头也会保留。
+上游 `401`、`422`、`429`、`529` 等状态码与错误体原样返回；调用方或官方 SDK 负责退避重试。
+详见官方 [System One](https://docs.typesafe.ai/api/system-one)、
+[模型列表](https://docs.typesafe.ai/api/list-models) 和 [请求限制及错误](https://docs.typesafe.ai/api/errors)。
 
 ### 注意
 

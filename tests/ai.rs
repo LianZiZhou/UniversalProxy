@@ -239,7 +239,9 @@ async fn typesafeai_native_payloads_are_untouched() {
             "tone": {"type": "choice", "criteria": {"calm": "Calm", "angry": "Angry"}},
             "urgency": {"type": "score", "criteria": ["Low", "High"]}
         }
-    }).to_string().into_bytes();
+    })
+    .to_string()
+    .into_bytes();
     let mut gzip = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
     gzip.write_all(&json).unwrap();
     let multipart = format!(
@@ -249,10 +251,16 @@ async fn typesafeai_native_payloads_are_untouched() {
     for (body, content_type, encoding) in [
         (json, "application/json", None),
         (gzip.finish().unwrap(), "application/json", Some("gzip")),
-        (multipart, "multipart/form-data; boundary=test-boundary", None),
+        (
+            multipart,
+            "multipart/form-data; boundary=test-boundary",
+            None,
+        ),
     ] {
         let mut req = client()
-            .post(format!("http://{addr}/typesafeai/v1/systemone?note=https%3A%2F%2Fai.test%2Ftypesafeai"))
+            .post(format!(
+                "http://{addr}/typesafeai/v1/systemone?note=https%3A%2F%2Fai.test%2Ftypesafeai"
+            ))
             .header("host", GATEWAY)
             .header("authorization", "Bearer typesafe-test")
             .header("content-type", content_type)
@@ -271,28 +279,46 @@ async fn typesafeai_native_payloads_are_untouched() {
         assert_eq!(v["echo_query"], "note=https%3A%2F%2Fai.test%2Ftypesafeai");
         assert_eq!(v["content"], "https://api.typesafe.ai/v1/systemone");
         assert_eq!(v["answers"]["billing"]["noul"], 0.98);
-        assert_eq!(v["usage"], serde_json::json!({"input_tokens": 120, "output_tokens": 12}));
+        assert_eq!(
+            v["usage"],
+            serde_json::json!({"input_tokens": 120, "output_tokens": 12})
+        );
     }
 }
 
 #[tokio::test]
 async fn typesafeai_models_and_errors_pass_through() {
     let addr = setup().await;
-    let r = client().get(format!("http://{addr}/typesafeai/v1/models"))
+    let r = client()
+        .get(format!("http://{addr}/typesafeai/v1/models"))
         .header("host", GATEWAY)
         .header("authorization", "Bearer typesafe-test")
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(r.status(), 200);
-    assert_eq!(r.text().await.unwrap(), r#"{"models":[{"name":"jev-latest","description":"See https://api.typesafe.ai/v1/models","release_date":"2026-09-15"}]}"#);
+    assert_eq!(
+        r.text().await.unwrap(),
+        r#"{"models":[{"name":"jev-latest","description":"See https://api.typesafe.ai/v1/models","release_date":"2026-09-15"}]}"#
+    );
     for status in [400, 401, 413, 415, 422, 429, 529] {
-        let r = client().post(format!("http://{addr}/typesafeai/v1/systemone?status={status}"))
+        let r = client()
+            .post(format!(
+                "http://{addr}/typesafeai/v1/systemone?status={status}"
+            ))
             .header("host", GATEWAY)
             .header("authorization", "Bearer typesafe-test")
             .header("content-type", "application/json")
-            .body("{}").send().await.unwrap();
+            .body("{}")
+            .send()
+            .await
+            .unwrap();
         assert_eq!(r.status().as_u16(), status);
         assert_eq!(r.headers()[header::RETRY_AFTER], "3");
-        assert_eq!(r.text().await.unwrap(), r#"{"detail":"See https://api.typesafe.ai/v1/systemone"}"#);
+        assert_eq!(
+            r.text().await.unwrap(),
+            r#"{"detail":"See https://api.typesafe.ai/v1/systemone"}"#
+        );
     }
 }
 
@@ -516,7 +542,10 @@ async fn gateway_index() {
     assert!(providers.len() >= 40);
     let openai = providers.iter().find(|p| p["name"] == "openai").unwrap();
     assert_eq!(openai["base_url"], "https://ai.test/openai/v1");
-    let typesafeai = providers.iter().find(|p| p["name"] == "typesafeai").unwrap();
+    let typesafeai = providers
+        .iter()
+        .find(|p| p["name"] == "typesafeai")
+        .unwrap();
     assert_eq!(typesafeai["base_url"], "https://ai.test/typesafeai/v1");
     let vertex = providers.iter().find(|p| p["name"] == "vertex").unwrap();
     assert!(
